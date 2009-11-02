@@ -6,6 +6,8 @@
 #
 require 'net/https'
 require 'cgi'
+require 'rexml/document'
+require 'rss'
 if RUBY_VERSION < "1.9"
   require 'kconv'
 end
@@ -30,6 +32,16 @@ class Mixi
   LEVEL_ALL = 4
   LEVEL_FRIEND_FRIEND = 3
   LEVEL_FRIEND = 2
+
+  # お知らせの種類
+  UPDATE_DIARY = :diary
+  UPDATE_COMMENT = :comment
+  UPDATE_BBS = :bbs
+  UPDATE_ALBUM = :album
+  UPDATE_VIDEO = :video
+
+  # 自分のメンバーID
+  attr_reader :member_id
 
   def initialize(user, pass, use_ssl = false)
     @user = user
@@ -62,6 +74,9 @@ class Mixi
 
     # post_key取得
     get_post_key
+
+    # member_id取得
+    get_member_id
   end
 
   # add echo (発言)
@@ -106,12 +121,82 @@ class Mixi
   def edit_account_echo(level)
     path = "/edit_account_echo.pl"
 
-    raise ArgumentError, "Invalid parameter method: #{method}" if level < 2 && level > 4
+    raise ArgumentError, "Invalid parameter method: #{method}" if level < LEVEL_FRIEND && level > LEVEL_ALL
 
-    body_finish = "mode=finish&echo_level=#{level}#{@post_key_edit}"
+    body = "mode=finish&echo_level=#{level}#{@post_key_edit}"
 
-    request(POST, path, body_finish)
+    request(POST, path, body)
   end
+
+  # 新着情報取得
+  #  typeを指定しない場合は全ジャンル
+  def updates(member_id = @member_id, type = nil)
+    path = "/atom/updates/r=1/member_id=#{member_id}"
+    case type
+    when :diary
+      path += "/-/diary"
+    when :comment
+      path += "/-/comment"
+    when :bbs
+      path += "/-/bbs"
+    when :album
+      path += "/-/album"
+    when :video
+      path += "/-/video"
+    end
+
+    items = []
+    res = request(GET, path)
+    RSS::Parser.parse(res.body).items.each do |item|
+      items << Update.new(item.category.label, item.link.href, item.title.content, item.summary.content, item.author.name.content, item.updated.content)
+    end
+
+    return items
+  end
+
+  # マイミク情報取得
+  def friends(member_id = @member_id)
+    path = "/atom/friends/r=1/member_id=#{member_id}"
+
+    items = []
+    res = request(GET, path)
+    # RSS::Atom だと invalid なので REXML を使う
+    REXML::Document.new(res.body).elements.each('feed/entry') do |entry|
+      items << User.new(entry.elements['id'].text.sub(/^.*-/, ""), entry.elements['title'].text, entry.elements['updated'].text, entry.elements['icon'].text)
+    end
+
+    return items
+  end
+
+  # 足跡情報取得
+  def tracks(member_id = @member_id)
+    path = "/atom/tracks/r=2/member_id=#{member_id}"
+
+    items = []
+    res = request(GET, path)
+    RSS::Parser.parse(res.body).items.each do |item|
+      items << Track.new(item.author.name.content, item.updated.content, item.link.href)
+    end
+
+    return items
+  end
+
+  # お知らせ情報取得
+  def notify(member_id = @member_id)
+    path = "/atom/notify/r=2/member_id=#{member_id}"
+    # 意味のある情報がないようなので未実装
+  end
+
+  # メンバーID取得
+  def get_member_id
+    path = "/atom/updates/r=1"
+
+    res = request(GET, path)
+    doc = REXML::Document.new(res.body)
+    href = doc.elements['service/workspace/collection'].attribute("href").to_s
+    @member_id = href.sub(/^.*member_id=/, "")
+  end
+  private :get_member_id
 
   # エコーリスト取得
   def _get_echoes(type, member_id = nil)
@@ -134,7 +219,7 @@ class Mixi
 
   # htmlからエコーリスト取り出す
   def echo_lists(html)
-    echo_lists = []
+    lists = []
 
     trs = Nokogiri::HTML(html).search('div[@class="archiveList"]/table/tr')
     trs.each do |tr|
@@ -145,10 +230,10 @@ class Mixi
       post_time = tr.at('div[@class="echo_post_time"]').text
       time_message = tr.at('td[@class="comment"]/span/a').text
 
-      echo_lists << Echo.new(member_id, nickname, comment, post_time, time_message, thumb_url)
+      lists << Echo.new(member_id, nickname, comment, post_time, time_message, thumb_url)
     end
 
-    return echo_lists
+    return lists
   end
   private :echo_lists
 
@@ -212,6 +297,43 @@ class Mixi
       @post_time = post_time
       @time_message = time_message
       @thumb_url = thumb_url
+    end
+  end
+
+  # 足跡情報
+  class Track
+    attr_reader :name, :updated, :link
+
+    def initialize(name, updated, link)
+      @name = name
+      @updated = updated
+      @link = link
+    end
+  end
+
+  # 更新情報
+  class Update
+    attr_reader :category, :link, :title, :summary, :name, :updated
+
+    def initialize(category, link, title, summary, name, updated)
+      @category = category
+      @link = link
+      @title = title
+      @summary = summary
+      @name = name
+      @updated = updated
+    end
+  end
+
+  # ユーザ情報
+  class User
+    attr_reader :id, :name, :updated, :icon_url
+
+    def initialize(id, name, updated, icon_url)
+      @id = id
+      @name = name
+      @updated = updated
+      @icon_url = icon_url
     end
   end
 end
