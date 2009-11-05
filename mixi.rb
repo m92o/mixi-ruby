@@ -64,10 +64,10 @@ class Mixi
     return if response == nil
 
     # セッション情報
-    @cookie = ""
-    response.get_fields('set-cookie').each do |cookie|
-      @cookie << cookie.gsub("path=/", "")
-    end
+    cookie = response.fetch('set-cookie')
+    bf_session = cookie.slice(/BF_SESSION=.*?;/)
+    bf_stamp = cookie.slice(/BF_STAMP=.*?;/)
+    @cookie = "#{bf_session} #{bf_stamp}"
 
     # ログイン後、SSLが有効なままだと何故か動かないので無効にする(要調査)
     @use_ssl = false
