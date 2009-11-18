@@ -1,0 +1,46 @@
+#
+# Ruby用 mixiライブラリ
+#
+# Copyright (c) 2009 Kunio Murasawa <kunio.murasawa@gmail.com>
+#
+
+名前
+ mixi.rb
+
+作者
+ Kunio Murasawa <kunio.murasawa@gmail.com>
+
+対応機能
+ - ログイン
+  - login
+
+ - ボイス
+  - 発言
+   - add_echo
+
+  - 削除
+   - delete_echo
+
+  - ボイス取得
+   - recent_echo
+   - list_echo
+   - res_echo
+
+  - 公開範囲設定
+   - edit_account_echo
+
+ - 新着情報取得
+  - updates
+
+ - マイミク情報取得
+  - friends
+
+ - 足跡情報取得
+  - tracks
+
+取得方法
+ $ git clone git://github.com/m92o/mixi-ruby.git mixi-ruby
+
+ライセンス
+ BSDライセンス
+ 詳細は附属のLICENCEファイルを参照
