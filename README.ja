@@ -1,7 +1,7 @@
 #
 # Ruby用 mixiライブラリ
 #
-# Copyright (c) 2009 Kunio Murasawa <kunio.murasawa@gmail.com>
+# Copyright (c) 2009 - 2010 Kunio Murasawa <kunio.murasawa@gmail.com>
 #
 
 名前
@@ -11,35 +11,90 @@
  Kunio Murasawa <kunio.murasawa@gmail.com>
 
 対応機能
+ - 初期化
+  - initialize(user, pass, use_ssl)
+
  - ログイン
   - login
 
  - ボイス
   - 発言
-   - add_echo
+   - add_echo(message)
+
+  - 返信
+   - reply_echo(message, member_id, post_time)
 
   - 削除
-   - delete_echo
+   - delete_echo(post_time)
 
-  - ボイス取得
+  - 返信削除
+   - delete_response(member_id, post_time, comment_member_id, comment_post_time)
+
+  - マイミクボイス取得
    - recent_echo
-   - list_echo
-   - res_echo
+
+  - 指定ユーザボイス取得
+   - list_echo(member_id = nil)
+    - member_idを省略した場合は自分のボイス
 
   - 公開範囲設定
-   - edit_account_echo
+   - edit_account_echo(level)
 
  - 新着情報取得
-  - updates
+  - updates(member_id, type = nil)
+   - member_idを省略した場合は自分の情報
+   - typeを省略した場合は全て
 
  - マイミク情報取得
-  - friends
+  - friends(member_id)
+   - member_idを省略した場合は自分の情報
 
  - 足跡情報取得
-  - tracks
+  - tracks(member_id)
+   - member_idを省略した場合は自分の情報
 
 取得方法
  $ git clone git://github.com/m92o/mixi-ruby.git mixi-ruby
+
+使い方
+ # ライブラリ読み込み
+ require 'mixi/mixi'
+
+ # 初期化
+ mixi = Mixi.new(user, pass, true)
+
+ # ログイン
+  mixi.login
+
+ # 発言
+ mixi.add_echo("メッセージ")
+
+ # 返信
+ mixi.reply_echo("返信メッセージ", member_id, post_time)
+
+ # 削除
+ mixi.delete_echo(post_time)
+
+ # 返信削除
+ mixi,delete_response(member_id, post_time, comment_member_id, comment_post_time)
+
+ # マイミクボイス取得
+ voices = mixi.recent_echo
+
+ # 指定ユーザボイス取得
+ voices = list_echo
+
+ # 公開範囲設定
+ mixi.edit_account_echo(Mixi::LEVEL_ALL)
+
+ # 新着情報取得
+ updates = mixi.updates(member_id, Mixi::UPDATE_DIARY)
+
+ # マイミク情報取得
+ friends = mixi.friends
+
+ # 足跡情報取得
+ tracks = mixi.tracks
 
 ライセンス
  BSDライセンス

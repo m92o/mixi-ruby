@@ -24,9 +24,8 @@ class Mixi
   # エコーリストの種類
   RECENT_ECHO = :recent
   LIST_ECHO = :list
-  RES_ECHO = :res
 
-  REDIRECT = "&redirect=recent_echo"
+  REDIRECT = "&redirect=recent_voice.pl"
 
   # ボイスの公開範囲
   LEVEL_ALL = 4
@@ -80,25 +79,39 @@ class Mixi
   end
 
   # add echo (発言)
-  #  返信の場合は、返信したいボイスのmember_idとpost_timeを指定
-  def add_echo(message, member_id = nil, post_time = nil)
-    path = "/add_echo.pl"
+  def add_echo(message)
+    path = "/add_voice.pl"
 
     raise ArgumentError, "Too long (>150)" if message.length > 150
 
-    # body
-    res = (member_id != nil && post_time != nil) ? "&parent_member_id=#{member_id}&parent_post_time=#{post_time}" : ""
-    body = "body=" + CGI.escape(euc_conv(message)) + "#{res}#{@post_key}#{REDIRECT}"
+    body = "body=" + CGI.escape(euc_conv(message)) + "#{@post_key}#{REDIRECT}"
+    request(POST, path, body)
+  end
 
+  # reply echo (返信)
+  def reply_echo(message, member_id, post_time)
+    path = "/system/rpc.json"
+
+    raise ArgumentError, "Too long (>150)" if message.length > 150
+
+    encode_message = utf8_conv(message)
+
+    body = "{\"jsonrpc\": \"2.0\", \"method\": \"Voice.InsertComment\", \"params\": {\"member_id\": \"#{member_id}\", \"post_time\": \"#{post_time}\", \"comment_member_id\": \"#{@member_id}\", \"body\": \"#{encode_message}\", \"auth_key\": \"#{@auth_key}\"}, \"id\": 0}"
     request(POST, path, body)
   end
 
   # delete echo (ボイス削除)
   def delete_echo(post_time)
-    path = "/delete_echo.pl"
+    path = "/delete_voice.pl"
     param = "?post_time=#{post_time}#{@post_key}#{REDIRECT}"
-
     request(GET, path + param)
+  end
+
+  # delete response (返信ボイス削除)
+  def delete_response(member_id, post_time, comment_member_id, comment_post_time)
+    path = "/system/rpc.json"
+    body = "{\"jsonrpc\": \"2.0\", \"method\": \"Voice.DeleteComment\", \"params\": {\"member_id\": \"#{member_id}\", \"post_time\": \"#{post_time}\", \"comment_member_id\": \"#{comment_member_id}\", \"comment_post_time\": \"#{comment_post_time}\", \"auth_key\": \"#{@auth_key}\"}, \"id\": 0}"
+    request(POST, path, body)
   end
 
   # recent echo (マイミクのボイス)
@@ -112,18 +125,13 @@ class Mixi
     return _get_echoes(LIST_ECHO, member_id)
   end
 
-  # res echo (自分宛の返信ボイス)
-  def res_echo
-    return _get_echoes(RES_ECHO)
-  end
-
   # edit account echo (ボイス公開範囲設定)
   def edit_account_echo(level)
-    path = "/edit_account_echo.pl"
+    path = "/edit_account_voice.pl"
 
     raise ArgumentError, "Invalid parameter method: #{method}" if level < LEVEL_FRIEND && level > LEVEL_ALL
 
-    body = "mode=finish&echo_level=#{level}#{@post_key_edit}"
+    body = "mode=commit&voice_level=#{level}#{@post_key_edit}"
 
     request(POST, path, body)
   end
@@ -202,12 +210,10 @@ class Mixi
   def _get_echoes(type, member_id = nil)
     case type
     when :recent
-      path = "/recent_echo.pl"
+      path = "/recent_voice.pl"
     when :list
-      path = "/list_echo.pl"
+      path = "/list_voice.pl"
       path += "?id=#{member_id}" if member_id != nil
-    when :res
-      path = "/res_echo.pl"
     else
       raise ArgumentError, "Invalid parameter method: #{method}"
     end
@@ -221,30 +227,51 @@ class Mixi
   def echo_lists(html)
     lists = []
 
-    trs = Nokogiri::HTML(html).search('div[@class="archiveList"]/table/tr')
-    trs.each do |tr|
-      thumb_url = tr.at('td[@class="thumb"]/a/img').attribute('src')
-      member_id = tr.at('div[@class="echo_member_id"]').text
-      nickname = tr.at('div[@class="echo_nickname"]').text
-      comment = tr.at('div[@class="echo_body"]').text
-      post_time = tr.at('div[@class="echo_post_time"]').text
-      time_message = tr.at('td[@class="comment"]/span/a').text
+    archives = Nokogiri::HTML(html).search('div[@class="voiceArchives"]/ul[@class="listArea"]/li[class="archive"]')
+    archives.each do |archive|
+      thumb_url = archive.at('div[@class="thumbArea"]/span/a/img').attribute('src')
+      member_id = archive.at('input[@class="memberId"]').attribute('value')
+      nickname = archive.at('input[@class="nickname"]').attribute('value')
+      comment = archive.at('div[@class="voiceArea"]/div[@class="voiceWrap"]/div/p').text
+      comment.slice!(comment.rindex('('), comment.length)
+      post_time = archive.at('input[@class="postTime"]').attribute('value')
+      time_message = archive.at('div[@class="voiceArea"]/div[@class="voiceWrap"]/div/p/span/a').text
 
-      lists << Echo.new(member_id, nickname, comment, post_time, time_message, thumb_url)
+      res = []
+      morelink = archive.search('div[@class="voiceArea"]/div[@class="voiceWrap"]/div[@class="resArea"]/div/p[@class="moreLink01 hrule"]')
+      if morelink.length > 0
+        path = "/" + morelink.at('a').attribute('href');
+        response = request(GET, path);
+        comments = Nokogiri::HTML(response.body).search('div[@class="commentList"]/dl[class="comment"]/dd')
+      else
+        comments = archive.search('div[@class="voiceArea"]/div[@class="voiceWrap"]/div[@class="resArea"]/div/dl[@class="comment"]/dd')
+      end
+      comments.each do |row|
+        res_thumb_url = row.at('span/a/img').attribute('src')
+        res_member_id = row.at('input[@class="commentMemberId"]').attribute('value')
+        res_nickname = row.at('div/a').text
+        res_comment = row.at('div/p').text
+        res_comment.slice!(res_comment.rindex('('), res_comment.length)
+        res_post_time = row.at('input[@class="commentPostTime"]').attribute('value')
+        res_time_message = row.at('div/p/span').text
+
+        res << Voice.new(res_member_id, res_nickname, res_comment, res_post_time, res_time_message, res_thumb_url, nil)
+      end
+
+      lists << Voice.new(member_id, nickname, comment, post_time, time_message, thumb_url, res)
     end
 
     return lists
   end
   private :echo_lists
 
-  # htmlからpost_keyを取り出す
   def get_post_key
-    # 発言、削除時に必要なキー
-    res = request(GET, "/recent_echo.pl")
-    @post_key = "&post_key=" + Nokogiri::HTML(res.body).at('input[@id="post_key"]').attribute('value')
+    res = request(GET, "/recent_voice.pl")
+    @auth_key = Nokogiri::HTML(res.body).at('input[@id="post_key"]').attribute('value')
+    @post_key = "&post_key=" + @auth_key
 
     # 設定時に必要なキー
-    res = request(GET, "/edit_account_echo.pl")
+    res = request(GET, "/edit_account_voice.pl")
     @post_key_edit = "&post_key=" + Nokogiri::HTML(res.body).at('input[@name="post_key"]').attribute('value')
   end
   private :get_post_key
@@ -252,6 +279,11 @@ class Mixi
   # euc-jpに変換
   def euc_conv(string)
     return (RUBY_VERSION < "1.9") ? Kconv.toeuc(string) : string.encode("EUC-JP")
+  end
+  private :euc_conv
+
+  def utf8_conv(string)
+    return (RUBY_VERSION < "1.9") ? Kconv.toutf8(string) : string.encode("UTF-8")
   end
   private :euc_conv
 
@@ -267,7 +299,6 @@ class Mixi
     end
     req.add_field("Cookie", @cookie) if @cookie != nil
     req.body = body if body != nil
-
     port = (@use_ssl == true) ? HTTPS_PORT : HTTP_PORT
 
     http = Net::HTTP.new(HOST, port)
@@ -286,17 +317,18 @@ class Mixi
   end
   private :request
 
-  # エコー情報
-  class Echo
-    attr_reader :member_id, :nickname, :comment, :post_time, :time_message, :thumb_url
+  # ボイス情報
+  class Voice
+    attr_reader :member_id, :nickname, :comment, :post_time, :time_message, :thumb_url, :response
 
-    def initialize(member_id, nickname, comment, post_time, time_message, thumb_url)
+    def initialize(member_id, nickname, comment, post_time, time_message, thumb_url, response)
       @member_id = member_id
       @nickname = nickname
       @comment = comment
       @post_time = post_time
       @time_message = time_message
       @thumb_url = thumb_url
+      @response = response
     end
   end
 
