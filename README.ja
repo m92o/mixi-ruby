@@ -64,7 +64,7 @@
  mixi = Mixi.new(user, pass, true)
 
  # ログイン
-  mixi.login
+ mixi.login
 
  # 発言
  mixi.add_echo("メッセージ")
